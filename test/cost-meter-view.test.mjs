@@ -2,6 +2,10 @@
  * The configurable pill: which numbers it shows, where that choice lives, and
  * the two invariants the UI promises (fixed layout order, never empty).
  *
+ * It also covers the two things that are true about the dialog's own box rather
+ * than its numbers: it re-places itself when unfolding makes it taller, and it
+ * says so when the clock leaves the years the holiday table covers.
+ *
  * The dialog's five detail rows are NOT part of this — they stay complete, and
  * the shipped suites already pin them down.
  *
@@ -32,7 +36,10 @@ globalThis.setTimeout = (fn, ms) => { const id = ++timerSeq; timers.set(id, { fn
 globalThis.setInterval = (fn, ms) => { const id = ++timerSeq; timers.set(id, { fn, ms }); return id; };
 globalThis.clearTimeout = (id) => { timers.delete(id); };
 globalThis.clearInterval = (id) => { timers.delete(id); };
-Date.now = () => Date.parse('2026-09-30T12:00:00+08:00'); // Beijing noon → off-peak
+/** Beijing noon on a working day: off-peak, and inside the holiday table. */
+const CLOCK_MS = Date.parse('2026-09-30T12:00:00+08:00');
+let clockMs = CLOCK_MS;
+Date.now = () => clockMs;
 
 // ── storage I own ───────────────────────────────────────────────────────────
 const VIEW_KEY = 'dsh-cost-meter/view/v1';
@@ -211,17 +218,24 @@ const textOf = (node) => {
   return '';
 };
 const pillText = (tree) => textOf(findButton(tree)?.children?.[1]);
-const choiceOf = (panel, label) => (panel?.children?.[3]?.children?.[1]?.children ?? [])
+/** The picker block, found by class so a new panel row cannot shift it. */
+const displayOf = (panel) => (panel?.children ?? [])
+  .find((child) => child?.props?.className === 'dshcost_display');
+const noticeOf = (panel) => (panel?.children ?? [])
+  .find((child) => child?.props?.className === 'dshcost_notice') ?? null;
+const choiceOf = (panel, label) => (displayOf(panel)?.children?.[1]?.children ?? [])
   .find((choice) => choice?.children?.[1] === label);
 const cellText = (tree, name) => {
-  const flat = (findPanel(tree)?.children?.[2]?.children ?? []).flat(Infinity);
+  const list = (findPanel(tree)?.children ?? [])
+    .find((child) => child?.props?.className === 'dshcost_details');
+  const flat = (list?.children ?? []).flat(Infinity);
   const index = flat.findIndex((cell) => cell?.children?.[0] === name);
   return index < 0 ? null : flat[index + 1]?.children?.[0];
 };
 /** The picker is collapsed until its title is clicked; expand it and return it. */
 const pickerOf = (page) => {
   const panel = findPanel(page.tree());
-  const toggle = panel?.children?.[3]?.children?.[0];
+  const toggle = displayOf(panel)?.children?.[0];
   if (toggle === undefined) return null;
   if (toggle.props['aria-expanded'] === false) {
     toggle.props.onClick();
@@ -241,6 +255,7 @@ const mount = async () => {
 };
 /** A fresh browser: no ledger, no stored choice, no usage, no running turn. */
 const resetWorld = () => {
+  clockMs = CLOCK_MS;
   storage.clear();
   usage.uncachedInputTokens = 0;
   usage.cacheReadTokens = 1000000;
@@ -452,6 +467,37 @@ check('growing the dialog moves it back up',
   grown?.top === 700 - 300 - 8, JSON.stringify(grown));
 check('and keeps it inside the viewport',
   grown.top >= 12 && grown.top + 300 <= 800 - 12, JSON.stringify(grown));
+
+// ═══ H. the holiday table owns up when the clock leaves it ══════════════════
+resetWorld();
+page = await mount();
+findButton(page.tree()).props.onClick();
+check('no notice while the table covers the year',
+  noticeOf(findPanel(page.redraw())) === null
+  && findButton(page.tree()).props.title === undefined,
+  JSON.stringify([noticeOf(findPanel(page.tree())) === null, findButton(page.tree()).props.title]));
+
+resetWorld();
+clockMs = Date.parse('2027-01-01T12:00:00+08:00');   // the table stops at 2026
+page = await mount();
+const staleTree = page.tree();
+check('the pill stays quiet and keeps the caveat in its tooltip',
+  findButton(staleTree).props.title === '节假日表只到 2026，假期当天可能按高峰计价',
+  JSON.stringify(findButton(staleTree).props.title));
+
+findButton(page.tree()).props.onClick();
+const stalePanel = findPanel(page.redraw());
+check('the dialog says the table is behind',
+  noticeOf(stalePanel)?.children?.[0] === '节假日表只到 2026，假期当天可能按高峰计价'
+  && noticeOf(stalePanel)?.props?.role === 'status',
+  JSON.stringify(noticeOf(stalePanel)?.children));
+check('and the five rows survive it',
+  (stalePanel?.children ?? [])
+    .find((child) => child?.props?.className === 'dshcost_details')
+    ?.children?.flat(Infinity).filter((cell) => cell.type === 'dt')
+    .map((cell) => cell.children[0]).join('|')
+    === '充值余额|赠送额度|余额合计|本次会话|本轮花费',
+  JSON.stringify(stalePanel?.children?.map((child) => child?.props?.className)));
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

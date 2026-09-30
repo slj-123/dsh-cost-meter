@@ -86,6 +86,15 @@ window.__ModuleLoader__.load({
       '2026-10-06', '2026-10-07',
     ]);
 
+    /**
+     * The newest year the table covers. Derived from the data rather than kept
+     * by hand, so pasting next year's notice into HOLIDAYS is the only edit
+     * needed to clear the staleness notice.
+     */
+    const HOLIDAY_YEAR = HOLIDAYS.size === 0
+      ? 0
+      : Math.max(...[...HOLIDAYS].map((date) => Number(date.slice(0, 4))));
+
     /** Per-session estimate cache, so a page reload resumes instead of restarting. */
     const LEDGER_KEY = 'dsh-cost-meter/ledger/v2';
     const LEDGER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -172,6 +181,8 @@ window.__ModuleLoader__.load({
       '.dshcost_details dt,.dshcost_details dd{min-width:0;margin:0}',
       '.dshcost_details dd{color:var(--dsw-alias-label-secondary);',
       'font-variant-numeric:tabular-nums;text-align:right}',
+      '.dshcost_notice{color:var(--dsw-alias-state-warn-primary);',
+      'margin-top:8px;font-size:11px;line-height:16px}',
       // display-item picker, below the dialog body
       '.dshcost_display{border-top:.5px solid var(--dsw-alias-border-l2);margin-top:12px;padding-top:10px}',
       '.dshcost_disclosure{color:var(--dsw-alias-label-tertiary);font:inherit;',
@@ -223,6 +234,7 @@ window.__ModuleLoader__.load({
       'panel.display': '显示项',
       'panel.runningMark': '标注「进行中」',
       'panel.spendEffect': '花费变红 + 扣血动效',
+      'panel.holidayStale': '节假日表只到 {year}，假期当天可能按高峰计价',
       'pill.aria': '账号钱包 {list}',
       'pill.aria.join': '，',
     };
@@ -238,6 +250,7 @@ window.__ModuleLoader__.load({
       'panel.display': 'Shown in the pill',
       'panel.runningMark': 'Mark the running turn',
       'panel.spendEffect': 'Red spend with a hit effect',
+      'panel.holidayStale': 'Holiday table ends at {year}: holidays may bill at the peak rate',
       'pill.aria': 'Account wallet {list}',
       'pill.aria.join': ', ',
     };
@@ -343,6 +356,16 @@ window.__ModuleLoader__.load({
       if (weekday === 0 || weekday === 6) return 'off';
       if (HOLIDAYS.has(date)) return 'off';
       return (minutes >= 540 && minutes < 720) || (minutes >= 840 && minutes < 1080) ? 'peak' : 'off';
+    }
+
+    /**
+     * True once the clock has left the years the holiday table knows about. The
+     * State Council publishes next year's arrangement each autumn, so there is a
+     * window every winter where a public holiday is silently priced as a peak
+     * weekday; this is what lets the UI say so instead.
+     */
+    function holidayTableStale(ms) {
+      return Number(beijingAt(ms).date.slice(0, 4)) > HOLIDAY_YEAR;
     }
 
     /** The rate row for one route, accepting a "provider/model" key too. */
@@ -996,6 +1019,7 @@ window.__ModuleLoader__.load({
       turnShown,
       pickerOpen,
       onTogglePicker,
+      holidayStale,
     }) {
       const symbol = snapshot.symbol;
       const factor = correction === null ? 1 : correction.factor;
@@ -1026,6 +1050,11 @@ window.__ModuleLoader__.load({
         h('span', { className: 'dshcost_titleValue' }, formatMoney(snapshot.total, symbol))),
       h('div', { className: 'dshcost_titleRule', 'aria-hidden': true }),
       h('dl', { className: 'dshcost_details' }, rows),
+      // The table only knows the years it lists, and the published notice for
+      // the next one lands each autumn. Until then a holiday can be priced as a
+      // peak weekday, so the row that reads the estimate says so.
+      holidayStale && h('div', { className: 'dshcost_notice', role: 'status' },
+        t('panel.holidayStale', { year: HOLIDAY_YEAR })),
       // The five rows above stay complete: the pill is the glance, this list is
       // the detail. The picker only chooses what the pill repeats.
       h('div', { className: 'dshcost_display' },
@@ -1248,6 +1277,11 @@ window.__ModuleLoader__.load({
       if (correction !== null) ariaParts.push(tr('estimate.corrected', { factor: correction.factor.toFixed(2) }));
       const label = tr('pill.aria', { list: ariaParts.join(tr('pill.aria.join')) });
 
+      // The pill stays quiet about it and keeps the caveat in its tooltip; the
+      // dialog is where the reader is already looking at provenance.
+      const holidayStale = holidayTableStale(Date.now());
+      const staleNotice = holidayStale ? tr('panel.holidayStale', { year: HOLIDAY_YEAR }) : null;
+
       const panel = open
         ? WalletPanel({
           panelRef,
@@ -1267,6 +1301,7 @@ window.__ModuleLoader__.load({
           turnShown: view.includes('turn'),
           pickerOpen,
           onTogglePicker: () => setPickerOpen((was) => !was),
+          holidayStale,
         })
         : null;
 
@@ -1304,6 +1339,7 @@ window.__ModuleLoader__.load({
           type: 'button',
           className: 'dshcost_pill',
           'aria-label': label,
+          title: staleNotice ?? undefined,
           'aria-haspopup': 'dialog',
           'aria-expanded': open,
           onClick: () => setOpen(!open),
