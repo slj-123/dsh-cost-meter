@@ -153,11 +153,57 @@ window.__ModuleLoader__.load({
 
     const SYMBOL = { CNY: '¥', USD: '$' };
 
-    /** Two decimals with Platform Web's sub-cent rule. */
+    /** This package's locale namespace; the pill and the panel own this copy. */
+    const NS = 'cost-meter';
+    /**
+     * Visible copy, in the shape `ctx.locale.register` takes. Simplified Chinese
+     * is the key-set source of truth and the English dictionary carries the same
+     * keys. The framework-injected `t` seat resolves these against the active
+     * locale; `fallbackTranslate` keeps the component readable in a composition
+     * that installs no locale face, and in the offline tests.
+     */
+    const ZH = {
+      'panel.title': '账号钱包',
+      'row.topUp': '充值余额',
+      'row.bonus': '赠送额度',
+      'row.total': '余额合计',
+      'row.session': '本次会话 · 官网价',
+      'row.turn': '本轮花费',
+      'turn.running': '（进行中）',
+      'estimate.corrected': '（实测 ×{factor}）',
+      'pill.aria': '账号钱包 {balance}',
+      'pill.aria.session': '账号钱包 {balance}，本次会话 {estimate}',
+      'pill.aria.corrected': '账号钱包 {balance}，本次会话 {estimate}（按实测 ×{factor} 修正）',
+    };
+    const EN = {
+      'panel.title': 'Account wallet',
+      'row.topUp': 'Top-up balance',
+      'row.bonus': 'Bonus credit',
+      'row.total': 'Total balance',
+      'row.session': 'This session · list price',
+      'row.turn': 'This turn',
+      'turn.running': '(running)',
+      'estimate.corrected': '(measured ×{factor})',
+      'pill.aria': 'Account wallet {balance}',
+      'pill.aria.session': 'Account wallet {balance}, this session {estimate}',
+      'pill.aria.corrected': 'Account wallet {balance}, this session {estimate} (measured ×{factor})',
+    };
+
+    /** Stand-in translator for a composition that installs no locale face. */
+    function fallbackTranslate(key, params) {
+      const template = ZH[key] ?? key;
+      if (params === undefined) return template;
+      return template.replace(/\{(\w+)\}/g, (match, name) => (
+        params[name] === undefined ? match : String(params[name])
+      ));
+    }
+
+    /** Two decimals with Platform Web's sub-cent rule; the sign is kept. */
     function formatMoney(amount, symbol) {
       const value = Math.abs(amount);
-      if (value > 0 && value < 0.01) return '<' + symbol + '0.01';
-      return symbol + value.toLocaleString('en-US', {
+      const sign = amount < 0 ? '-' : '';
+      if (value > 0 && value < 0.01) return sign + '<' + symbol + '0.01';
+      return sign + symbol + value.toLocaleString('en-US', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
@@ -431,9 +477,12 @@ window.__ModuleLoader__.load({
         return entry.models[key];
       };
       const prune = (at) => {
-        const stale = Object.entries(entries).filter(([, value]) => at - value.startedAt > LEDGER_TTL_MS);
+        // A entry without a usable `startedAt` is corrupt, not eternal: treating
+        // it as 0 makes both the TTL and the recency sort drop it.
+        const startedAt = (value) => (Number.isFinite(value?.startedAt) ? value.startedAt : 0);
+        const stale = Object.entries(entries).filter(([, value]) => at - startedAt(value) > LEDGER_TTL_MS);
         for (const [key] of stale) delete entries[key];
-        const kept = Object.entries(entries).sort((a, b) => b[1].startedAt - a[1].startedAt);
+        const kept = Object.entries(entries).sort((a, b) => startedAt(b[1]) - startedAt(a[1]));
         for (const [key] of kept.slice(LEDGER_MAX_SESSIONS)) delete entries[key];
       };
       const keep = (sessionId, entry) => {
@@ -788,33 +837,33 @@ window.__ModuleLoader__.load({
      * that — reconciliation, calibration, price-table revision — still runs, it
      * is just not shown here.
      */
-    function WalletPanel({ panelRef, pos, snapshot, estimate, correction, turnCosts, running }) {
+    function WalletPanel({ panelRef, pos, snapshot, estimate, correction, turnCosts, running, t }) {
       const symbol = snapshot.symbol;
       const factor = correction === null ? 1 : correction.factor;
       const current = turnCosts === null ? null : turnCosts.current;
       const estimateValue = estimate === null
         ? '—'
         : '≈' + formatCost(estimate.corrected, symbol)
-          + (correction === null ? '' : '（实测 ×' + correction.factor.toFixed(2) + '）');
+          + (correction === null ? '' : t('estimate.corrected', { factor: correction.factor.toFixed(2) }));
       const turnValue = current === null || !(current.cost > 0)
         ? '—'
-        : '≈' + formatCost(current.cost * factor, symbol) + (running ? '（进行中）' : '');
+        : '≈' + formatCost(current.cost * factor, symbol) + (running ? t('turn.running') : '');
       const rows = [
-        row('充值余额', formatMoney(snapshot.topUp, symbol), 'topup'),
-        row('赠送额度', formatMoney(snapshot.bonus, symbol), 'bonus'),
-        row('余额合计', formatMoney(snapshot.total, symbol), 'total'),
-        row('本次会话 · 官网价', estimateValue, 'estimate'),
-        row('本轮花费', turnValue, 'turn'),
+        row(t('row.topUp'), formatMoney(snapshot.topUp, symbol), 'topup'),
+        row(t('row.bonus'), formatMoney(snapshot.bonus, symbol), 'bonus'),
+        row(t('row.total'), formatMoney(snapshot.total, symbol), 'total'),
+        row(t('row.session'), estimateValue, 'estimate'),
+        row(t('row.turn'), turnValue, 'turn'),
       ];
       return h('div', {
         ref: panelRef,
         className: 'dshcost_panel',
         role: 'dialog',
-        'aria-label': '账号钱包',
+        'aria-label': t('panel.title'),
         style: pos ?? MEASURE_STYLE,
       },
       h('div', { className: 'dshcost_title' },
-        h('span', { className: 'dshcost_titleLabel' }, h(WalletIcon), '账号钱包'),
+        h('span', { className: 'dshcost_titleLabel' }, h(WalletIcon), t('panel.title')),
         h('span', { className: 'dshcost_titleValue' }, formatMoney(snapshot.total, symbol))),
       h('div', { className: 'dshcost_titleRule', 'aria-hidden': true }),
       h('dl', { className: 'dshcost_details' }, rows));
@@ -824,7 +873,10 @@ window.__ModuleLoader__.load({
      * The pill and its dialog. Every hook runs before the early return, so the
      * hook order stays stable across renders.
      */
-    function WalletPill({ useProjection, useSession, sessionId, wallets, payments }) {
+    function WalletPill({ useProjection, useSession, sessionId, wallets, payments, t }) {
+      // The slot hands over `t` once the entry declares its locale namespace; the
+      // local dictionary keeps the component readable without that seat.
+      const tr = typeof t === 'function' ? t : fallbackTranslate;
       const usage = useProjection('tokenUsage');
       const selection = useProjection('modelSelection');
       const running = useSession((snapshot) => snapshot !== undefined && snapshot.running === true) === true;
@@ -918,12 +970,20 @@ window.__ModuleLoader__.load({
       const correction = calibration !== null && calibration.applied ? calibration : null;
       const estimateText = estimate === null ? null : '≈' + formatCost(estimate.corrected, snapshot.symbol);
       const turnCosts = entry === undefined || entry === null ? null : { current: entry.current ?? null };
-      const label = '账号钱包 ' + balanceText
-        + (estimateText === null ? '' : '，本次会话 ' + estimateText)
-        + (correction === null ? '' : '（按实测 ×' + correction.factor.toFixed(2) + ' 修正）');
+      const label = correction !== null
+        ? tr('pill.aria.corrected', {
+          balance: balanceText,
+          estimate: estimateText,
+          factor: correction.factor.toFixed(2),
+        })
+        : estimateText === null
+          ? tr('pill.aria', { balance: balanceText })
+          : tr('pill.aria.session', { balance: balanceText, estimate: estimateText });
 
       const panel = open
-        ? WalletPanel({ panelRef, pos, snapshot, estimate, correction, turnCosts, running })
+        ? WalletPanel({
+          panelRef, pos, snapshot, estimate, correction, turnCosts, running, t: tr,
+        })
         : null;
 
       return h(React.Fragment, null,
@@ -954,7 +1014,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'remote', 'remote.account'],
+      inject: ['slots', 'remote', 'remote.account', 'locale'],
       apply(ctx) {
         const tracker = createWalletTracker(async () => {
           const result = await ctx.remote.account.getBalance(accountMetadata());
@@ -962,6 +1022,13 @@ window.__ModuleLoader__.load({
           return result.value;
         });
         const ledger = createLedger(createStorage());
+
+        // The pill and the panel read their copy from this namespace. The slot
+        // entry below declares it, and that declaration is what hands the
+        // component its `t` seat.
+        if (ctx.locale !== undefined) {
+          ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'cost-meter: dictionaries');
+        }
 
         // Genuine push: `account.watch` is a Remote stream, so it rides the
         // browser's WebSocket to the Host (`/api/remote.mux`) and delivers
@@ -972,15 +1039,24 @@ window.__ModuleLoader__.load({
           const stream = ctx.remote.$stream({
             name: 'account',
             open: (signal) => ctx.remote.account.watch(signal),
-            ended: () => new Error('account stream ended'),
+            // A generation that ends is terminal here: the poll loop below keeps
+            // the wallet fresh either way, so `accepted` only sharpens the message.
+            ended: (accepted) => new Error(accepted
+              ? 'account stream ended'
+              : 'account stream closed before its opening value'),
           });
           if (typeof ctx.effect === 'function') {
             ctx.effect(() => () => { void stream.dispose(); }, 'cost-meter: account stream');
           }
           void (async () => {
             try {
-              for await (const frame of stream) {
-                if (frame !== undefined) void tracker.refresh({ force: true });
+              for await (const item of stream) {
+                // `$stream` hands every item a per-generation `accept()`, and that
+                // call is what resets the wrapper's reconnect budget: without it
+                // the second carrier loss ends the stream for the rest of the
+                // page's life, leaving polling as the only source of updates.
+                item?.accept?.();
+                if (item !== undefined) void tracker.refresh({ force: true });
               }
             } catch {
               // The stream ended; the poll loop still covers later refreshes.
@@ -994,6 +1070,7 @@ window.__ModuleLoader__.load({
           name: 'conversation.composer.dock',
           id: 'cost-meter',
           order: 10,
+          locale: NS,
           inject: () => ({ wallets: tracker, payments: ledger }),
         }, WalletPill));
       },
