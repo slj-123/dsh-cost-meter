@@ -855,18 +855,29 @@ window.__ModuleLoader__.load({
         wallets.setWatching(open);
         if (open) wallets.refresh({ force: true });
       }, [open, wallets]);
-      // A rising running edge opens a new turn bucket. Mount is deliberately not
-      // an edge: if the page loads mid-turn, the bucket already in the ledger
-      // belongs to that same turn, and opening another would split the turn's
-      // cost — which is exactly what the audit caught (a reload during turn 22
-      // left "上一轮" showing only a fragment).
+      // A rising running edge opens a new turn bucket — and only a rising edge.
+      // This effect also re-runs when the wallet becomes readable mid-turn (a
+      // page load during a turn starts with `ready === false`), so keying the
+      // call on `running && ready` reopened the bucket on that transition and
+      // split the running turn — exactly the split the mount guard prevents.
+      // `open` tracks the running *episode* instead of the current render.
       const sawMount = React.useRef(false);
+      const turnOpen = React.useRef(false);
       React.useEffect(() => {
         if (!sawMount.current) {
           sawMount.current = true;
+          // A turn already running at mount is adopted from the restored ledger,
+          // not opened.
+          turnOpen.current = running;
           return;
         }
-        if (running && ready) payments.beginTurn(sessionId, Date.now());
+        if (!running) {
+          turnOpen.current = false;
+          return;
+        }
+        if (!ready || turnOpen.current) return;
+        turnOpen.current = true;
+        payments.beginTurn(sessionId, Date.now());
       }, [payments, sessionId, running, ready]);
       // Price each observed delta and remember the wallet this session started from.
       React.useEffect(() => {
