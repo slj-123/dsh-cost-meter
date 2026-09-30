@@ -59,11 +59,17 @@ const cellAt = (kind) => {
 };
 const React = {
   Fragment: Symbol('Fragment'),
-  createElement: (type, props, ...children) => ({
-    type,
-    props: props ?? {},
-    children: children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false),
-  }),
+  createElement: (type, props, ...children) => {
+    // Function components render eagerly: this shim has no reconciler, and the
+    // bundle keeps its presentational components hook-free, so inlining the call
+    // is what the browser ends up with anyway.
+    if (typeof type === 'function') return type(props ?? {});
+    return {
+      type,
+      props: props ?? {},
+      children: children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false),
+    };
+  },
   memo: (component) => component,
   useState(initial) {
     const cell = cellAt('state');

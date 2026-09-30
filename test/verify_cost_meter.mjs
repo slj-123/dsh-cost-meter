@@ -42,11 +42,17 @@ Object.defineProperty(globalThis, 'localStorage', {
 const hooks = { slots: [], cursor: 0, overrides: {} };
 const React = {
   Fragment: Symbol('Fragment'),
-  createElement: (type, props, ...children) => ({
-    type,
-    props: props ?? {},
-    children: children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false),
-  }),
+  createElement: (type, props, ...children) => {
+    // Function components render eagerly: this shim has no reconciler, and the
+    // bundle keeps its presentational components hook-free, so inlining the call
+    // is what the browser ends up with anyway.
+    if (typeof type === 'function') return type(props ?? {});
+    return {
+      type,
+      props: props ?? {},
+      children: children.flat(Infinity).filter((child) => child !== null && child !== undefined && child !== false),
+    };
+  },
   memo: (component) => component,
   useState(initial) {
     const index = hooks.cursor;
@@ -406,10 +412,10 @@ check('pill is a dialog trigger', findButton(closed)?.props?.['aria-haspopup'] =
   && findButton(closed)?.props?.['aria-expanded'] === false);
 check('closed pill renders no panel', findPanel(closed) === undefined);
 
-const iconElement = findButton(closed)?.children?.[0];
-const iconSvg = typeof iconElement?.type === 'function' ? iconElement.type({}) : null;
+const iconSvg = findButton(closed)?.children?.[0];
 check('the wallet icon replaced the yen circle',
-  iconSvg?.type === 'svg' && JSON.stringify(iconSvg.children.map((child) => child.type)) === '["rect","path","circle"]',
+  iconSvg?.type === 'svg'
+  && JSON.stringify((iconSvg?.children ?? []).map((child) => child.type)) === '["rect","path","circle"]',
   JSON.stringify(iconSvg?.children?.map((child) => child.type)));
 
 const opened = renderPill({ open: true });

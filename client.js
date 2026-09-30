@@ -33,7 +33,14 @@ window.__ModuleLoader__.load({
       createPortal = null;
     }
 
-    /** Client build version carried by account calls; follows the app build. */
+    /**
+     * Client build version carried by account calls; follows the app build.
+     *
+     * Bumped by hand, and it has to be: a Client half has no channel to read the
+     * app version from (the boot graph carries module ids and paths, `__DSH_BOOT__`
+     * has no version field, the client Services expose none, and the desktop app
+     * sets no user agent). Worth checking after every Harness update.
+     */
     const CLIENT_VERSION = '0.2.0-rc.2';
     /** Wallet poll while a turn is running or the dialog is open. */
     const RUNNING_INTERVAL_MS = 5000;
@@ -1289,7 +1296,7 @@ window.__ModuleLoader__.load({
       const staleNotice = holidayStale ? tr('panel.holidayStale', { year: HOLIDAY_YEAR }) : null;
 
       const panel = open
-        ? WalletPanel({
+        ? h(WalletPanel, {
           panelRef,
           pos,
           snapshot,
@@ -1334,7 +1341,6 @@ window.__ModuleLoader__.load({
       }
 
       return h(React.Fragment, null,
-        h('style', { key: 'cost-meter-css' }, CSS),
         h('div', {
           key: 'cost-meter',
           className: 'dshcost_root',
@@ -1365,6 +1371,18 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'remote', 'remote.account', 'locale'],
       apply(ctx) {
+        // One stylesheet for the page rather than one per pill instance: the copy
+        // is static, and a second composer should not append a second copy of it.
+        if (typeof document !== 'undefined' && typeof document.createElement === 'function'
+          && document.head !== undefined && document.head !== null) {
+          const style = document.createElement('style');
+          style.setAttribute('data-cost-meter', 'stylesheet');
+          style.textContent = CSS;
+          document.head.appendChild(style);
+          if (typeof ctx.effect === 'function') {
+            ctx.effect(() => () => { style.remove(); }, 'cost-meter: stylesheet');
+          }
+        }
         const tracker = createWalletTracker(async () => {
           const result = await ctx.remote.account.getBalance(accountMetadata());
           if (result === undefined || result.ok !== true) throw new Error('account balance failed');

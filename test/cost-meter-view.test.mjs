@@ -96,6 +96,10 @@ const cellAt = (kind) => {
 const React = {
   Fragment: Symbol('Fragment'),
   createElement: (type, props, ...children) => {
+    // Function components render eagerly: this shim has no reconciler, and the
+    // bundle keeps its presentational components hook-free, so inlining the call
+    // is what the browser ends up with anyway.
+    if (typeof type === 'function') return type(props ?? {});
     const node = {
       type,
       props: props ?? {},
@@ -144,8 +148,26 @@ globalThis.window = {
   innerWidth: 1280, innerHeight: 800, addEventListener() {}, removeEventListener() {},
 };
 Object.defineProperty(globalThis, 'navigator', { value: { language: 'zh-CN' }, configurable: true });
+/** Enough of a head for the plugin to inject its one stylesheet into. */
+const injectedStyles = [];
 globalThis.document = {
-  visibilityState: 'visible', body: { nodeType: 1 }, addEventListener() {}, removeEventListener() {},
+  visibilityState: 'visible',
+  body: { nodeType: 1 },
+  head: { appendChild(node) { injectedStyles.push(node); } },
+  createElement(tag) {
+    return {
+      tag,
+      attrs: {},
+      textContent: '',
+      setAttribute(name, value) { this.attrs[name] = value; },
+      remove() {
+        const at = injectedStyles.indexOf(this);
+        if (at >= 0) injectedStyles.splice(at, 1);
+      },
+    };
+  },
+  addEventListener() {},
+  removeEventListener() {},
 };
 
 await import(pathToFileURL(path.join(dir, 'client.js')).href);
@@ -271,6 +293,14 @@ check('a fresh browser shows the balance and the session estimate',
   pillText(page.tree()) === '¥45.19·¥0.02', pillText(page.tree()));
 check('nothing is written until the user chooses something',
   storage.get(VIEW_KEY) === undefined, String(storage.get(VIEW_KEY)));
+check('the stylesheet is injected once, not per pill',
+  injectedStyles.length === 1
+  && injectedStyles[0]?.tag === 'style'
+  && String(injectedStyles[0]?.textContent).includes('.dshcost_pill'),
+  JSON.stringify([injectedStyles.length, injectedStyles[0]?.tag]));
+check('the pill tree no longer carries its own style node',
+  (page.tree()?.children ?? []).every((child) => child?.type !== 'style'),
+  JSON.stringify((page.tree()?.children ?? []).map((child) => child?.type)));
 
 // ═══ B. a stored choice is honoured, in the fixed layout order ══════════════
 resetWorld();

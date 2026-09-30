@@ -121,6 +121,16 @@ const AUTO_CALIBRATE = true        // 是否应用实测修正
 
 界面文案走 Harness 的 `ctx.locale`：本包注册 `cost-meter` 命名空间（`zh` 为键集基准，`en` 与之逐键对应），槽位声明 `locale` 后由框架注入 `t`，跟随 Harness 的语言设置实时切换。组合里没有 locale 服务时回退到中文内置字典，界面不会空白。
 
+## 维护
+
+升级 Harness 或官方改价时，改 `client.js` 顶部这几个常量：
+
+| 常量 | 什么时候改 |
+|---|---|
+| `RATES` + `RATES_VERSION` | 官方价目表变了：两个一起改，`RATES_VERSION` 一变，旧记录下的实测校准系数自动作废 |
+| `CLIENT_VERSION` | 跟随 Harness 桌面版版本号。**只能手工跟**：客户端半边拿不到 app 版本（启动图里只有模块 id 和路径，`__DSH_BOOT__` 没有版本字段，客户端 Service 里也没有，桌面版也没设 user agent） |
+| `HOLIDAYS` | 国办发文公布次年安排后（一般每年 11–12 月）把日期补进去，弹框里的过期提示会自动消失 |
+
 ## 开发与测试
 
 零依赖，直接用 Node 跑：
