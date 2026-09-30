@@ -120,6 +120,12 @@ window.__ModuleLoader__.load({
     };
     /** What the pill showed before it was configurable. */
     const DEFAULT_VIEW = ['balance', 'session'];
+    /**
+     * The order the picker lists them in: the dialog's own rows, so the
+     * checkboxes read the same way as the table above them. The pill keeps
+     * VIEW_ITEMS order -- that one is a layout, this one is a list.
+     */
+    const VIEW_PICKER_ORDER = ['topUp', 'bonus', 'balance', 'session', 'turn'];
     /** A turn's cost must rise by this much before the pill reacts to it. */
     const SPEND_HIT_MIN_DELTA = 0.0002;
     /** Two reactions never land closer together than this, however fast the steps come. */
@@ -1078,7 +1084,7 @@ window.__ModuleLoader__.load({
         }, h('path', { d: 'M9 5l7 7-7 7' })),
         t('panel.display')),
         pickerOpen && h('div', { className: 'dshcost_choices' },
-          VIEW_ITEMS.map((id) => h('label', {
+          VIEW_PICKER_ORDER.map((id) => h('label', {
             key: id,
             className: 'dshcost_choice',
           },

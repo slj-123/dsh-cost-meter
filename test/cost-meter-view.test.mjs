@@ -383,6 +383,14 @@ const bonusChoice = choiceOf(panel, '赠送额度');
 check('every pill item has a checkbox', choiceOf(panel, '充值余额') !== undefined
   && bonusChoice !== undefined && choiceOf(panel, '余额合计') !== undefined
   && choiceOf(panel, '本次会话') !== undefined && choiceOf(panel, '本轮花费') !== undefined);
+// The list mirrors the dialog's rows; the pill keeps its own layout order, which
+// section B pins down (balance first, whatever order the choice was stored in).
+check('the picker lists the items in the dialog row order',
+  (displayOf(panel)?.children?.[1]?.children ?? []).slice(0, 5)
+    .map((choice) => choice?.children?.[1]).join('|')
+  === '充值余额|赠送额度|余额合计|本次会话|本轮花费',
+  JSON.stringify((displayOf(panel)?.children?.[1]?.children ?? [])
+    .slice(0, 5).map((choice) => choice?.children?.[1])));
 check('the running-mark switch is gone while the turn item is off',
   choiceOf(panel, '标注「进行中」') === undefined,
   JSON.stringify(choiceOf(panel, '标注「进行中」')));
