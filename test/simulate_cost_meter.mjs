@@ -194,9 +194,9 @@ findButton(tree).props.onClick();
 tree = render();
 check('click opens the dialog', findPanel(tree) !== undefined);
 check('the dialog is the five requested rows',
-  rowLabels(tree).join('|') === '充值余额|赠送额度|余额合计|本次会话 · 官网价|本轮花费', JSON.stringify(rowLabels(tree)));
-check('a fresh session starts at zero', String(cellText(tree, '本次会话 · 官网价')) === '≈¥0.00',
-  String(cellText(tree, '本次会话 · 官网价')));
+  rowLabels(tree).join('|') === '充值余额|赠送额度|余额合计|本次会话|本轮花费', JSON.stringify(rowLabels(tree)));
+check('a fresh session starts at zero', String(cellText(tree, '本次会话')) === '≈¥0.00',
+  String(cellText(tree, '本次会话')));
 check('no turn cost before a turn runs', String(cellText(tree, '本轮花费')) === '—',
   String(cellText(tree, '本轮花费')));
 
@@ -204,16 +204,16 @@ check('no turn cost before a turn runs', String(cellText(tree, '本轮花费')) 
 usage.cacheReadTokens = 1000000; // ¥0.02 per 1M off-peak
 tree = render(); // effect feeds the ledger
 tree = render(); // re-render shows the fed estimate
-check('the pill shows the session estimate', labelText(tree).includes('≈¥0.02'), labelText(tree));
-check('the dialog shows the same estimate', String(cellText(tree, '本次会话 · 官网价')) === '≈¥0.02',
-  String(cellText(tree, '本次会话 · 官网价')));
+check('the pill shows the session estimate', labelText(tree).includes('¥0.02'), labelText(tree));
+check('the dialog shows the same estimate', String(cellText(tree, '本次会话')) === '≈¥0.02',
+  String(cellText(tree, '本次会话')));
 
 // 4. more usage: only the delta is priced
 usage.outputTokens = 1000; // ¥4 per 1M off-peak → +0.004
 tree = render();
 tree = render();
-check('deltas accumulate at the official rates', String(cellText(tree, '本次会话 · 官网价')) === '≈¥0.024',
-  String(cellText(tree, '本次会话 · 官网价')));
+check('deltas accumulate at the official rates', String(cellText(tree, '本次会话')) === '≈¥0.024',
+  String(cellText(tree, '本次会话')));
 
 // 5. the platform actually charges: the wallet drops and the poll reports it
 await settle(); // let the usage-triggered read finish before charging again
@@ -264,8 +264,8 @@ tree = render();
 tree = render();
 check('the next turn starts from zero', String(cellText(tree, '本轮花费')) === '≈¥0.008（进行中）',
   String(cellText(tree, '本轮花费')));
-check('the session total still covers every turn', String(cellText(tree, '本次会话 · 官网价')) === '≈¥0.036',
-  String(cellText(tree, '本次会话 · 官网价')));
+check('the session total still covers every turn', String(cellText(tree, '本次会话')) === '≈¥0.036',
+  String(cellText(tree, '本次会话')));
 
 // 8. a page reload mid-turn must adopt the running turn, not split it in two.
 const before = payments.get('session-1');

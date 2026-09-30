@@ -93,6 +93,29 @@ window.__ModuleLoader__.load({
     /** Completed turns kept per session for the per-turn rows. */
     const TURN_HISTORY = 8;
 
+    /** Which numbers the pill shows, persisted per browser. */
+    const VIEW_KEY = 'dsh-cost-meter/view/v1';
+    /**
+     * Every number the pill can show, in the order the pill lays them out. The
+     * ids are the persisted vocabulary, so they never change; each one is named
+     * by the dialog row of the same value.
+     */
+    const VIEW_ITEMS = ['balance', 'topUp', 'bonus', 'session', 'turn'];
+    /** The dialog row that names each pill item. */
+    const VIEW_LABELS = {
+      balance: 'row.total',
+      topUp: 'row.topUp',
+      bonus: 'row.bonus',
+      session: 'row.session',
+      turn: 'row.turn',
+    };
+    /** What the pill showed before it was configurable. */
+    const DEFAULT_VIEW = ['balance', 'session'];
+    /** A turn's cost must rise by this much before the pill reacts to it. */
+    const SPEND_HIT_MIN_DELTA = 0.0002;
+    /** Two reactions never land closer together than this, however fast the steps come. */
+    const SPEND_HIT_INTERVAL_MS = 600;
+
     /** The pricing page revision the table above was copied from. */
     const RATES_VERSION = '2026-09-10';
     /** Wallet-vs-estimate samples needed before the correction claims anything. */
@@ -123,7 +146,7 @@ window.__ModuleLoader__.load({
       'color:var(--dsw-alias-label-tertiary);font:inherit;',
       'font-variant-numeric:tabular-nums;line-height:inherit;white-space:nowrap;',
       'background:0 0;border:none;border-radius:999px;align-items:center;gap:6px;',
-      'padding:1px 8px;display:inline-flex;cursor:pointer}',
+      'padding:1px 8px;display:inline-flex;cursor:pointer;position:relative}',
       '.dshcost_pill:hover,.dshcost_pill[aria-expanded="true"]{',
       'background:var(--dsw-alias-interactive-bg-hover);',
       'color:var(--dsw-alias-label-secondary)}',
@@ -149,6 +172,32 @@ window.__ModuleLoader__.load({
       '.dshcost_details dt,.dshcost_details dd{min-width:0;margin:0}',
       '.dshcost_details dd{color:var(--dsw-alias-label-secondary);',
       'font-variant-numeric:tabular-nums;text-align:right}',
+      // display-item picker, below the dialog body
+      '.dshcost_display{border-top:.5px solid var(--dsw-alias-border-l2);margin-top:12px;padding-top:10px}',
+      '.dshcost_disclosure{color:var(--dsw-alias-label-tertiary);font:inherit;',
+      'background:0 0;border:0;border-radius:6px;box-sizing:border-box;',
+      'width:calc(100% + 12px);margin:0 -6px;padding:2px 6px;gap:6px;',
+      'align-items:center;text-align:left;display:flex;cursor:pointer}',
+      '.dshcost_disclosure:hover{color:var(--dsw-alias-label-secondary);',
+      'background:var(--dsw-alias-interactive-bg-hover)}',
+      '.dshcost_chevron{flex:none;width:12px;height:12px;transition:transform .15s ease}',
+      '.dshcost_chevron[data-open="true"]{transform:rotate(90deg)}',
+      '.dshcost_choices{grid-template-columns:1fr 1fr;gap:4px 12px;display:grid;margin-top:8px}',
+      '.dshcost_choice{color:var(--dsw-alias-label-secondary);align-items:center;gap:6px;display:flex;cursor:pointer}',
+      '.dshcost_choice:hover{color:var(--dsw-alias-label-primary)}',
+      '.dshcost_choiceWide{grid-column:1/-1}',
+      '.dshcost_choice input{margin:0;cursor:pointer}',
+      // opportunity cost, worn on the sleeve — only when the reader asked for it
+      '.dshcost_spend{color:var(--dsw-alias-state-error-primary)}',
+      '.dshcost_hit{display:inline-block;animation:dshcost-hit .45s ease-out}',
+      '.dshcost_hitFlash{position:absolute;inset:0;border-radius:999px;',
+      'background:var(--dsw-alias-state-error-primary);opacity:.14;',
+      'pointer-events:none;animation:dshcost-flash .5s ease-out forwards}',
+      '@keyframes dshcost-hit{0%{transform:translateY(-1px) scale(1.08)}',
+      '40%{transform:translateY(1px) scale(1)}100%{transform:none}}',
+      '@keyframes dshcost-flash{0%{opacity:.2}100%{opacity:0}}',
+      '@media (prefers-reduced-motion:reduce){.dshcost_hit,.dshcost_hitFlash{animation:none}',
+      '.dshcost_chevron{transition:none}}',
     ].join('');
 
     const SYMBOL = { CNY: '¥', USD: '$' };
@@ -167,26 +216,30 @@ window.__ModuleLoader__.load({
       'row.topUp': '充值余额',
       'row.bonus': '赠送额度',
       'row.total': '余额合计',
-      'row.session': '本次会话 · 官网价',
+      'row.session': '本次会话',
       'row.turn': '本轮花费',
       'turn.running': '（进行中）',
       'estimate.corrected': '（实测 ×{factor}）',
-      'pill.aria': '账号钱包 {balance}',
-      'pill.aria.session': '账号钱包 {balance}，本次会话 {estimate}',
-      'pill.aria.corrected': '账号钱包 {balance}，本次会话 {estimate}（按实测 ×{factor} 修正）',
+      'panel.display': '显示项',
+      'panel.runningMark': '标注「进行中」',
+      'panel.spendEffect': '花费变红 + 扣血动效',
+      'pill.aria': '账号钱包 {list}',
+      'pill.aria.join': '，',
     };
     const EN = {
       'panel.title': 'Account wallet',
       'row.topUp': 'Top-up balance',
       'row.bonus': 'Bonus credit',
       'row.total': 'Total balance',
-      'row.session': 'This session · list price',
+      'row.session': 'This session',
       'row.turn': 'This turn',
       'turn.running': '(running)',
       'estimate.corrected': '(measured ×{factor})',
-      'pill.aria': 'Account wallet {balance}',
-      'pill.aria.session': 'Account wallet {balance}, this session {estimate}',
-      'pill.aria.corrected': 'Account wallet {balance}, this session {estimate} (measured ×{factor})',
+      'panel.display': 'Shown in the pill',
+      'panel.runningMark': 'Mark the running turn',
+      'panel.spendEffect': 'Red spend with a hit effect',
+      'pill.aria': 'Account wallet {list}',
+      'pill.aria.join': ', ',
     };
 
     /** Stand-in translator for a composition that installs no locale face. */
@@ -436,6 +489,82 @@ window.__ModuleLoader__.load({
         getItem: (key) => (memory.has(key) ? memory.get(key) : null),
         setItem: (key, value) => { memory.set(key, value); },
       };
+    }
+
+    /**
+     * Which numbers the pill shows. Stored per browser rather than in the
+     * profile: the choice is about this screen's composer row, and localStorage
+     * keeps it instant — a checkbox has to repaint the pill on the same click.
+     *
+     * The stored order is ignored: items always render in VIEW_ITEMS order so a
+     * later toggle cannot shuffle the row the user just got used to.
+     */
+    function createViewPreferences(storage) {
+      const read = () => {
+        try {
+          const raw = storage.getItem(VIEW_KEY);
+          if (raw === null || raw === '') return null;
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return { items: parsed };
+          return parsed !== null && typeof parsed === 'object' ? parsed : null;
+        } catch {
+          return null;
+        }
+      };
+      const stored = read();
+      const listed = stored?.items;
+      const chosen = Array.isArray(listed) ? VIEW_ITEMS.filter((id) => listed.includes(id)) : [];
+      let items = chosen.length === 0 ? [...DEFAULT_VIEW] : chosen;
+      // A record written before the flag existed has no opinion, and the
+      // behaviour it was written against marked the running turn.
+      let mark = typeof stored?.mark === 'boolean' ? stored.mark : true;
+      // This one arrived later and stays off until asked for: a red number that
+      // twitches on every step is a taste, not a default.
+      let spend = stored?.spend === true;
+      const save = () => {
+        try {
+          storage.setItem(VIEW_KEY, JSON.stringify({ version: 1, items, mark, spend }));
+        } catch { /* quota or blocked storage */ }
+      };
+      return {
+        get: () => items,
+        /** Whether the pill marks a turn that is still running. */
+        mark: () => mark,
+        /** Whether the turn's cost is worn as a red deduction with a hit cue. */
+        spend: () => spend,
+        /**
+         * Flip one item and persist. Removing the last remaining item is a
+         * no-op: a pill with nothing in it cannot be clicked back open.
+         */
+        toggle(id) {
+          if (!VIEW_ITEMS.includes(id)) return items;
+          const next = items.includes(id)
+            ? items.filter((each) => each !== id)
+            : VIEW_ITEMS.filter((each) => each === id || items.includes(each));
+          if (next.length === 0) return items;
+          items = next;
+          save();
+          return items;
+        },
+        toggleMark() {
+          mark = !mark;
+          save();
+          return mark;
+        },
+        toggleSpend() {
+          spend = !spend;
+          save();
+          return spend;
+        },
+      };
+    }
+
+    /** The store a render gets when nothing was injected (the offline tests). */
+    let looseViewPrefs = null;
+    function viewPrefsFor(injected) {
+      if (injected !== undefined && injected !== null) return injected;
+      looseViewPrefs = looseViewPrefs ?? createViewPreferences(createStorage());
+      return looseViewPrefs;
     }
 
     /**
@@ -790,14 +919,26 @@ window.__ModuleLoader__.load({
           if (top < PANEL_MARGIN) {
             top = Math.min(a.bottom + PANEL_GAP, Math.max(PANEL_MARGIN, window.innerHeight - p.height - PANEL_MARGIN));
           }
-          setPos({ left: Math.round(left), top: Math.round(top) });
+          const next = { left: Math.round(left), top: Math.round(top) };
+          setPos((current) => (current !== null && current.left === next.left && current.top === next.top
+            ? current
+            : next));
         };
         place();
         window.addEventListener('resize', place);
         window.addEventListener('scroll', place, true);
+        // The panel changes height while it is open: the copy grows, the picker
+        // unfolds. A position computed for the old height pushes the lower rows
+        // past the viewport edge, so re-place whenever the box changes size.
+        let observer = null;
+        if (typeof ResizeObserver === 'function' && panelRef.current !== null) {
+          observer = new ResizeObserver(() => place());
+          observer.observe(panelRef.current);
+        }
         return () => {
           window.removeEventListener('resize', place);
           window.removeEventListener('scroll', place, true);
+          if (observer !== null) observer.disconnect();
         };
       }, [open, anchorRef, panelRef]);
       return pos;
@@ -837,7 +978,25 @@ window.__ModuleLoader__.load({
      * that — reconciliation, calibration, price-table revision — still runs, it
      * is just not shown here.
      */
-    function WalletPanel({ panelRef, pos, snapshot, estimate, correction, turnCosts, running, t }) {
+    function WalletPanel({
+      panelRef,
+      pos,
+      snapshot,
+      estimate,
+      correction,
+      turnCosts,
+      running,
+      t,
+      view,
+      onToggleView,
+      mark,
+      onToggleMark,
+      spend,
+      onToggleSpend,
+      turnShown,
+      pickerOpen,
+      onTogglePicker,
+    }) {
       const symbol = snapshot.symbol;
       const factor = correction === null ? 1 : correction.factor;
       const current = turnCosts === null ? null : turnCosts.current;
@@ -866,23 +1025,87 @@ window.__ModuleLoader__.load({
         h('span', { className: 'dshcost_titleLabel' }, h(WalletIcon), t('panel.title')),
         h('span', { className: 'dshcost_titleValue' }, formatMoney(snapshot.total, symbol))),
       h('div', { className: 'dshcost_titleRule', 'aria-hidden': true }),
-      h('dl', { className: 'dshcost_details' }, rows));
+      h('dl', { className: 'dshcost_details' }, rows),
+      // The five rows above stay complete: the pill is the glance, this list is
+      // the detail. The picker only chooses what the pill repeats.
+      h('div', { className: 'dshcost_display' },
+        h('button', {
+          type: 'button',
+          className: 'dshcost_disclosure',
+          'aria-expanded': pickerOpen,
+          onClick: () => onTogglePicker(),
+        },
+        h('svg', {
+          className: 'dshcost_chevron',
+          viewBox: '0 0 24 24',
+          'aria-hidden': true,
+          focusable: 'false',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 2,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'data-open': pickerOpen ? 'true' : 'false',
+        }, h('path', { d: 'M9 5l7 7-7 7' })),
+        t('panel.display')),
+        pickerOpen && h('div', { className: 'dshcost_choices' },
+          VIEW_ITEMS.map((id) => h('label', {
+            key: id,
+            className: 'dshcost_choice',
+          },
+          h('input', {
+            type: 'checkbox',
+            checked: view.includes(id),
+            onChange: () => onToggleView(id),
+          }),
+          t(VIEW_LABELS[id]))),
+          // Not a number, so it spans both columns. It only words the turn item
+          // above, and the dialog's own row always says a turn is still running,
+          // so the switch is simply not there while that item is off.
+          turnShown && h('label', {
+            key: 'running-mark',
+            className: 'dshcost_choice dshcost_choiceWide',
+          },
+          h('input', {
+            type: 'checkbox',
+            checked: mark,
+            onChange: () => onToggleMark(),
+          }),
+          t('panel.runningMark')),
+          // Same rule: this one only dresses the turn item.
+          turnShown && h('label', {
+            key: 'spend-effect',
+            className: 'dshcost_choice dshcost_choiceWide',
+          },
+          h('input', {
+            type: 'checkbox',
+            checked: spend,
+            onChange: () => onToggleSpend(),
+          }),
+          t('panel.spendEffect')))));
     }
 
     /**
      * The pill and its dialog. Every hook runs before the early return, so the
      * hook order stays stable across renders.
      */
-    function WalletPill({ useProjection, useSession, sessionId, wallets, payments, t }) {
+    function WalletPill({ useProjection, useSession, sessionId, wallets, payments, viewPrefs, t }) {
       // The slot hands over `t` once the entry declares its locale namespace; the
       // local dictionary keeps the component readable without that seat.
       const tr = typeof t === 'function' ? t : fallbackTranslate;
+      // Same arrangement for the pill's chosen numbers.
+      const prefs = viewPrefsFor(viewPrefs);
       const usage = useProjection('tokenUsage');
       const selection = useProjection('modelSelection');
       const running = useSession((snapshot) => snapshot !== undefined && snapshot.running === true) === true;
       const snapshot = useWallet(wallets);
       const [open, setOpen] = React.useState(false);
       const [fed, setFed] = React.useState(null);
+      const [view, setView] = React.useState(prefs.get());
+      const [mark, setMark] = React.useState(prefs.mark());
+      const [spend, setSpend] = React.useState(prefs.spend());
+      const [hit, setHit] = React.useState(0);
+      const [pickerOpen, setPickerOpen] = React.useState(false);
       const rootRef = React.useRef(null);
       const panelRef = React.useRef(null);
       const pos = useAnchoredPanel(open, rootRef, panelRef);
@@ -940,6 +1163,26 @@ window.__ModuleLoader__.load({
         });
       }, [payments, sessionId, usageKey, ready, ready ? snapshot.total : null]);
 
+      // The hit cue fires on a rise, never on the first paint, and never closer
+      // than SPEND_HIT_INTERVAL_MS: one turn produces dozens of deltas, and a cue
+      // per delta would leave the composer row twitching for the whole turn.
+      const lastTurnCost = React.useRef(null);
+      const lastHitAt = React.useRef(0);
+      const turnCostRaw = ready && fed !== null && fed.id === sessionId
+        ? (fed.entry?.current?.cost ?? 0)
+        : 0;
+      React.useEffect(() => {
+        const previous = lastTurnCost.current;
+        lastTurnCost.current = turnCostRaw;
+        if (spend !== true || !view.includes('turn')) return;
+        if (previous === null || turnCostRaw - previous < SPEND_HIT_MIN_DELTA) return;
+        if (Date.now() - lastHitAt.current < SPEND_HIT_INTERVAL_MS) return;
+        if (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+          && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        lastHitAt.current = Date.now();
+        setHit((count) => count + 1);
+      }, [turnCostRaw, spend, view]);
+
       if (!ready) return null;
 
       const entry = fed !== null && fed.id === sessionId ? fed.entry : payments.get(sessionId);
@@ -968,23 +1211,86 @@ window.__ModuleLoader__.load({
         : shares.reduce((best, share) => (share.official > best.official ? share : best));
       const calibration = dominant === null ? null : dominant.verdict;
       const correction = calibration !== null && calibration.applied ? calibration : null;
-      const estimateText = estimate === null ? null : '≈' + formatCost(estimate.corrected, snapshot.symbol);
+      // The pill states its numbers plainly. The ≈ and the measured factor belong
+      // to the dialog, which is where the estimate's provenance is spelled out.
+      const estimateText = estimate === null ? null : formatCost(estimate.corrected, snapshot.symbol);
       const turnCosts = entry === undefined || entry === null ? null : { current: entry.current ?? null };
-      const label = correction !== null
-        ? tr('pill.aria.corrected', {
-          balance: balanceText,
-          estimate: estimateText,
-          factor: correction.factor.toFixed(2),
-        })
-        : estimateText === null
-          ? tr('pill.aria', { balance: balanceText })
-          : tr('pill.aria.session', { balance: balanceText, estimate: estimateText });
+
+      // One pill item per chosen number. `null` means there is nothing to show
+      // yet — an unpriced route, or a turn that has not spent anything — and the
+      // item is left out rather than printed as a placeholder.
+      const viewOf = (id) => {
+        switch (id) {
+          case 'balance': return { text: balanceText, label: 'row.total' };
+          case 'topUp': return { text: formatMoney(snapshot.topUp, snapshot.symbol), label: 'row.topUp' };
+          case 'bonus': return { text: formatMoney(snapshot.bonus, snapshot.symbol), label: 'row.bonus' };
+          case 'session': return estimateText === null ? null : { text: estimateText, label: 'row.session' };
+          case 'turn': {
+            const factor = correction === null ? 1 : correction.factor;
+            const cost = turnCosts === null || turnCosts.current === null
+              ? 0
+              : turnCosts.current.cost * factor;
+            return cost > 0
+              ? {
+                text: (spend ? '-' : '') + formatCost(cost, snapshot.symbol)
+                  + (running && mark ? tr('turn.running') : ''),
+                label: 'row.turn',
+                tone: spend ? 'dshcost_spend' : null,
+              }
+              : null;
+          }
+          default: return null;
+        }
+      };
+      const shown = view.map((id) => ({ id, item: viewOf(id) })).filter((each) => each.item !== null);
+
+      const ariaParts = shown.map(({ item }) => tr(item.label) + ' ' + item.text);
+      if (correction !== null) ariaParts.push(tr('estimate.corrected', { factor: correction.factor.toFixed(2) }));
+      const label = tr('pill.aria', { list: ariaParts.join(tr('pill.aria.join')) });
 
       const panel = open
         ? WalletPanel({
-          panelRef, pos, snapshot, estimate, correction, turnCosts, running, t: tr,
+          panelRef,
+          pos,
+          snapshot,
+          estimate,
+          correction,
+          turnCosts,
+          running,
+          t: tr,
+          view,
+          onToggleView: (id) => setView(prefs.toggle(id)),
+          mark,
+          onToggleMark: () => setMark(prefs.toggleMark()),
+          spend,
+          onToggleSpend: () => setSpend(prefs.toggleSpend()),
+          turnShown: view.includes('turn'),
+          pickerOpen,
+          onTogglePicker: () => setPickerOpen((was) => !was),
         })
         : null;
+
+      const labelNodes = [];
+      for (const { id, item } of shown) {
+        if (labelNodes.length > 0) {
+          labelNodes.push(h('span', {
+            key: 'sep-' + id,
+            className: 'dshcost_sep',
+            'aria-hidden': true,
+          }, '·'));
+        }
+        if (item.tone === null || item.tone === undefined) {
+          labelNodes.push(item.text);
+          continue;
+        }
+        // Re-keying on every cue remounts the node, which is what replays the
+        // CSS animation; a class alone would only play it once.
+        const struck = id === 'turn' && hit > 0;
+        labelNodes.push(h('span', {
+          key: 'v-' + id + (struck ? '-' + hit : ''),
+          className: item.tone + (struck ? ' dshcost_hit' : ''),
+        }, item.text));
+      }
 
       return h(React.Fragment, null,
         h('style', { key: 'cost-meter-css' }, CSS),
@@ -1003,11 +1309,12 @@ window.__ModuleLoader__.load({
           onClick: () => setOpen(!open),
         },
         h(WalletIcon, { key: 'icon' }),
-        h('span', { className: 'dshcost_label' },
-          balanceText,
-          estimateText !== null && h(React.Fragment, null,
-            h('span', { className: 'dshcost_sep', 'aria-hidden': true }, '·'),
-            estimateText)))),
+        h('span', { className: 'dshcost_label' }, labelNodes),
+        hit > 0 && spend && h('span', {
+          key: 'hit-flash-' + hit,
+          className: 'dshcost_hitFlash',
+          'aria-hidden': true,
+        }))),
         panel !== null && createPortal !== null && typeof document !== 'undefined'
           ? createPortal(panel, document.body)
           : panel);
@@ -1021,8 +1328,9 @@ window.__ModuleLoader__.load({
           if (result === undefined || result.ok !== true) throw new Error('account balance failed');
           return result.value;
         });
-        const ledger = createLedger(createStorage());
-
+        const storage = createStorage();
+        const ledger = createLedger(storage);
+        const viewPrefs = createViewPreferences(storage);
         // The pill and the panel read their copy from this namespace. The slot
         // entry below declares it, and that declaration is what hands the
         // component its `t` seat.
@@ -1071,7 +1379,7 @@ window.__ModuleLoader__.load({
           id: 'cost-meter',
           order: 10,
           locale: NS,
-          inject: () => ({ wallets: tracker, payments: ledger }),
+          inject: () => ({ wallets: tracker, payments: ledger, viewPrefs }),
         }, WalletPill));
       },
     };

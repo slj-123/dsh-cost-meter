@@ -401,7 +401,7 @@ const closed = renderPill();
 check('pill renders the real balance', JSON.stringify(findLabel(closed)?.children).includes('¥45.19'),
   JSON.stringify(findLabel(closed)?.children));
 check('pill renders the official-price estimate',
-  JSON.stringify(findLabel(closed)?.children).includes('≈¥0.086'), JSON.stringify(findLabel(closed)?.children));
+  JSON.stringify(findLabel(closed)?.children).includes('¥0.086'), JSON.stringify(findLabel(closed)?.children));
 check('pill is a dialog trigger', findButton(closed)?.props?.['aria-haspopup'] === 'dialog'
   && findButton(closed)?.props?.['aria-expanded'] === false);
 check('closed pill renders no panel', findPanel(closed) === undefined);
@@ -430,13 +430,13 @@ check('dialog lists the wallet rows',
   cellText(opened, '充值余额') === '¥43.19' && cellText(opened, '赠送额度') === '¥2.00'
   && cellText(opened, '余额合计') === '¥45.19',
   JSON.stringify([cellText(opened, '充值余额'), cellText(opened, '赠送额度')]));
-check('dialog states the session estimate', cellText(opened, '本次会话 · 官网价') === '≈¥0.086',
-  String(cellText(opened, '本次会话 · 官网价')));
+check('dialog states the session estimate', cellText(opened, '本次会话') === '≈¥0.086',
+  String(cellText(opened, '本次会话')));
 check('dialog prices the turn row', cellText(opened, '本轮花费') === '—', String(cellText(opened, '本轮花费')));
 const panelRows = (panel?.children?.[2]?.children ?? []).flat(Infinity);
 check('the dialog shows exactly the five requested rows',
   panelRows.length === 10 && panelRows.filter((cell) => cell.type === 'dt').map((cell) => cell.children[0]).join('|')
-    === '充值余额|赠送额度|余额合计|本次会话 · 官网价|本轮花费',
+    === '充值余额|赠送额度|余额合计|本次会话|本轮花费',
   JSON.stringify(panelRows.filter((cell) => cell.type === 'dt').map((cell) => cell.children[0])));
 
 // A turn in progress shows its own cost, marked as still running. It runs on its
@@ -448,8 +448,8 @@ await stageTracker.refresh({ force: true });
 const stale = renderPill({ sessionId: 'session-3', open: true });
 check('a failed read keeps the last numbers on screen',
   findPanel(stale) !== undefined && cellText(stale, '余额合计') === '¥45.19'
-  && cellText(stale, '本次会话 · 官网价') === '≈¥0.086',
-  JSON.stringify([cellText(stale, '余额合计'), cellText(stale, '本次会话 · 官网价')]));
+  && cellText(stale, '本次会话') === '≈¥0.086',
+  JSON.stringify([cellText(stale, '余额合计'), cellText(stale, '本次会话')]));
 mode = 'ready';
 await stageTracker.refresh({ force: true });
 
@@ -474,11 +474,11 @@ check('a proportional change is read as a price factor',
 check('a clean doubling leaves no foreign rate', close(verdict?.foreignRate ?? 1, 0), String(verdict?.foreignRate));
 const flagged = renderPill({ sessionId: 'cal-session', open: true });
 check('the corrected estimate carries its factor in the one row',
-  cellText(flagged, '本次会话 · 官网价') === '≈¥1.28（实测 ×2.00）',
-  String(cellText(flagged, '本次会话 · 官网价')));
+  cellText(flagged, '本次会话') === '≈¥1.28（实测 ×2.00）',
+  String(cellText(flagged, '本次会话')));
 const correctedPill = renderPill({ sessionId: 'cal-session' });
 check('the pill shows the corrected estimate',
-  JSON.stringify(findLabel(correctedPill)?.children).includes('≈¥1.28'),
+  JSON.stringify(findLabel(correctedPill)?.children).includes('¥1.28'),
   JSON.stringify(findLabel(correctedPill)?.children));
 
 // Case 2: the table is right, but a second computer draws from the same wallet at
@@ -506,8 +506,8 @@ check('the foreign drain is measured instead',
   close(shared?.foreignRate ?? 0, FOREIGN_PER_SECOND, 1e-6), String(shared?.foreignRate));
 const sharedPanel = renderPill({ sessionId: 'pro-session', open: true });
 check('a foreign drain adds no correction to the row',
-  cellText(sharedPanel, '本次会话 · 官网价') === '≈¥4.80',
-  String(cellText(sharedPanel, '本次会话 · 官网价')));
+  cellText(sharedPanel, '本次会话') === '≈¥4.80',
+  String(cellText(sharedPanel, '本次会话')));
 
 // Case 3: without spread in the sample costs a slope cannot be identified at all.
 localStorage.setItem('dsh-cost-meter/calibration/v2', JSON.stringify({ version: 'other', models: {} }));
@@ -526,8 +526,8 @@ check('identical sample costs cannot identify a factor',
   JSON.stringify([degenerateVerdict?.insufficientSpread, degenerateVerdict?.applied]));
 const degeneratePanel = renderPill({ sessionId: 'deg-session', open: true, payments: degenerate.payments });
 check('an unidentified factor leaves the row uncorrected',
-  cellText(degeneratePanel, '本次会话 · 官网价') === '≈¥0.24',
-  String(cellText(degeneratePanel, '本次会话 · 官网价')));
+  cellText(degeneratePanel, '本次会话') === '≈¥0.24',
+  String(cellText(degeneratePanel, '本次会话')));
 
 // ── per-model accounting still separates the shares ─────────────────────────
 // A clean stage again, so these samples never reach the detector cases above.
@@ -550,7 +550,7 @@ check('each share carries its own delta',
   JSON.stringify([lateSwitched.models['deepseek-flash'].cost, lateSwitched.models['deepseek-v4-pro'].cost]));
 const multiPanel = renderLate(multiStage);
 check('the session row adds both shares up',
-  cellText(multiPanel, '本次会话 · 官网价') === '≈¥9.04', String(cellText(multiPanel, '本次会话 · 官网价')));
+  cellText(multiPanel, '本次会话') === '≈¥9.04', String(cellText(multiPanel, '本次会话')));
 
 // The turn row on its own instance, so its samples never reach the rate cases.
 late.payments.observe(turnStage, READ_1M, ROUTE_FLASH, 45.19, at(PEAK_ISO));
