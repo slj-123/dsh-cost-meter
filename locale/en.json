@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session cost estimate",
+    "description": "Adds one pill below the composer card showing this session's estimated spend, computed from the session's token buckets and an editable rate table."
+  }
+}

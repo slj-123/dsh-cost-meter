@@ -1,0 +1,4 @@
+# Installs one row named after this bundle. The Client half renders the pill.
+- insert:
+    - id: cost-meter
+      name: "@local/dsh-cost-meter"

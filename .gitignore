@@ -1,0 +1,10 @@
+# dependencies (this plugin has none, but local tooling may create one)
+node_modules/
+pnpm-lock.yaml
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
